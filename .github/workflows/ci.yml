@@ -14,5 +14,6 @@ jobs:
       - name: Download source code
         uses: actions/checkout@v4
 
-      - name: Check application file
-        run: ls -l index.html
+
+      - name: Test Mission Control
+        run: grep -n "MISSION CONTROL" index.html
