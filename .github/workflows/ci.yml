@@ -9,6 +9,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+
     steps:
-      - name: Test pipeline
-        run: echo "Mission Control CI is working!"
+      - name: Download source code
+        uses: actions/checkout@v4
+
+      - name: Check application file
+        run: ls -l index.html
