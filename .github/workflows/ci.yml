@@ -17,3 +17,9 @@ jobs:
 
       - name: Test Mission Control
         run: grep -n "MISSION CONTROL" index.html
+
+        
+      - name: Prepare build artifact
+        run: |
+          mkdir -p dist
+          cp index.html dist/index.html
