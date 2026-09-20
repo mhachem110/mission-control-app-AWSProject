@@ -11,8 +11,8 @@ jobs:
 
 
     steps:
-      - name: Download source code
-        uses: actions/checkout@v4
+      # name: Download source code
+       # uses: actions/checkout@v4
 
       - name: Check application file
         run: ls -l index.html
