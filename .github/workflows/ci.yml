@@ -31,3 +31,7 @@ jobs:
         with:
           name: mission-control-build
           path: dist/
+
+          
+      - name: Build Docker image
+        run: docker build -t mission-control:v1.1 .
