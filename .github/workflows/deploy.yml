@@ -1,4 +1,4 @@
-name: Mission Control - S3 CI/CD
+name: Mission Control - Docker to S3
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches: [stage, uat, prod]
 
-# Build/test have read-only access. Only the deployment job can request AWS OIDC tokens.
 permissions:
   contents: read
 
@@ -19,69 +18,70 @@ jobs:
     outputs:
       environment: ${{ steps.detect.outputs.environment }}
     steps:
-      - name: Determine target from trigger
+      - name: Identify deployment environment
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BRANCH: ${{ github.ref_name }}
-          PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
         run: |
-          if [[ "$EVENT_NAME" == "push" && "$PUSH_BRANCH" == "dev" ]]; then
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == 'push' && "$PUSH_BRANCH" == 'dev' ]]; then
             target=dev
-          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-            case "$PR_BASE_BRANCH" in
-              stage|uat|prod) target="$PR_BASE_BRANCH" ;;
-              *) echo 'Unexpected pull request target' >&2; exit 1 ;;
+          elif [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            case "$PR_BASE" in
+              stage|uat|prod) target="$PR_BASE" ;;
+              *) echo 'Unexpected PR base branch' >&2; exit 1 ;;
             esac
           else
-            echo 'Unexpected deployment trigger' >&2
+            echo 'Unexpected workflow trigger' >&2
             exit 1
           fi
           echo "environment=$target" >> "$GITHUB_OUTPUT"
-          echo "Target environment: $target"
-          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Environment: $target"
+          echo "Repository owner: $GITHUB_REPOSITORY_OWNER"
           echo "Repository owner ID: $GITHUB_REPOSITORY_OWNER_ID"
           echo "Repository ID: $GITHUB_REPOSITORY_ID"
 
   build:
-    name: 2 - Build
+    name: 2 - Build Docker image
     needs: detect-environment
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out exact triggering commit
+      - name: Check out source code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-      - name: Package static website
+      - name: Build Docker image and package deployment outputs
         run: |
           set -euo pipefail
           test -s index.html
           mkdir -p dist
+          docker build --tag "mission-control:${GITHUB_SHA}" .
           cp index.html dist/index.html
-      - name: Upload build artifact
+          cp Dockerfile dist/Dockerfile
+          docker save "mission-control:${GITHUB_SHA}" | gzip -1 > dist/mission-control-image.tar.gz
+          (cd dist && sha256sum index.html Dockerfile mission-control-image.tar.gz > SHA256SUMS)
+      - name: Upload immutable build artifact for downstream jobs
         uses: actions/upload-artifact@v4
         with:
-          name: mission-control-site
+          name: mission-control-build
           path: dist/
           if-no-files-found: error
           retention-days: 7
 
   test:
-    name: 3 - Test
+    name: 3 - Test Docker container
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - name: Download exactly the built artifact
+      - name: Check out smoke-test script
+        uses: actions/checkout@v4
+      - name: Download the built artifact
         uses: actions/download-artifact@v4
         with:
-          name: mission-control-site
+          name: mission-control-build
           path: dist/
-      - name: Validate built site
-        run: |
-          set -euo pipefail
-          test -s dist/index.html
-          grep -Fqi 'MISSION CONTROL' dist/index.html
-          echo 'Static site smoke tests passed.'
+      - name: Start container and validate served HTML
+        run: bash tests/smoke.sh
 
   deploy:
     name: 4 - Deploy to S3
@@ -98,28 +98,32 @@ jobs:
       cancel-in-progress: false
     env:
       TARGET_ENV: ${{ needs.detect-environment.outputs.environment }}
-      S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
     steps:
-      - name: Download tested artifact
+      - name: Download the tested build artifact
         uses: actions/download-artifact@v4
         with:
-          name: mission-control-site
+          name: mission-control-build
           path: dist/
-      - name: Check deployment settings
+      - name: Check deployment inputs and checksums
         run: |
           set -euo pipefail
-          test -n "$S3_BUCKET" || { echo 'Set repository variable AWS_S3_BUCKET' >&2; exit 1; }
-          test -n "$AWS_REGION" || { echo 'Set repository variable AWS_REGION' >&2; exit 1; }
-          test -s dist/index.html
-      - name: Authenticate to AWS using short-lived OIDC credentials
+          test -n "$AWS_REGION" || { echo 'Missing GitHub variable AWS_REGION' >&2; exit 1; }
+          test -n "$S3_BUCKET" || { echo 'Missing GitHub variable AWS_S3_BUCKET' >&2; exit 1; }
+          (cd dist && sha256sum -c SHA256SUMS)
+      - name: Authenticate to AWS using GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Upload site and remove obsolete files in this environment only
+      - name: Upload Docker image archive, Dockerfile, and live website
         run: |
           set -euo pipefail
-          aws s3 sync dist/ "s3://${S3_BUCKET}/${TARGET_ENV}/" --delete --only-show-errors
-          aws s3api head-object --bucket "$S3_BUCKET" --key "${TARGET_ENV}/index.html" >/dev/null
-          echo "Deployment complete: s3://${S3_BUCKET}/${TARGET_ENV}/"
+          prefix="images/${TARGET_ENV}/${GITHUB_SHA}"
+          aws s3 cp dist/mission-control-image.tar.gz "s3://${S3_BUCKET}/${prefix}/mission-control-image.tar.gz" --only-show-errors
+          aws s3 cp dist/Dockerfile "s3://${S3_BUCKET}/${prefix}/Dockerfile" --only-show-errors
+          aws s3 cp dist/SHA256SUMS "s3://${S3_BUCKET}/${prefix}/SHA256SUMS" --only-show-errors
+          aws s3 cp dist/index.html "s3://${S3_BUCKET}/${TARGET_ENV}/index.html" --content-type 'text/html; charset=utf-8' --cache-control 'no-cache' --only-show-errors
+          echo "Docker image archive: s3://${S3_BUCKET}/${prefix}/mission-control-image.tar.gz"
+          echo "Website: s3://${S3_BUCKET}/${TARGET_ENV}/index.html"

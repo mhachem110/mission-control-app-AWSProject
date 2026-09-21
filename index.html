@@ -1,20 +1,125 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Mission Control</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#091326">
+  <title>Mission Control | Launch Console</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: #e9f3ff; background: radial-gradient(ellipse at 80% -10%, #214676 0, transparent 43%), radial-gradient(ellipse at 2% 95%, #19274a 0, transparent 45%), #081221; }
+    .shell { max-width: 1100px; margin: auto; padding: 32px 22px 70px; }
+    header, .section-head, .stat, .actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    header { border-bottom: 1px solid #29415b; padding-bottom: 24px; flex-wrap: wrap; }
+    .logo { display: flex; gap: 13px; align-items: center; font-weight: 850; letter-spacing: .14em; }
+    .logo-mark { display: grid; place-items: center; height: 42px; width: 42px; border: 1px solid #6dbdfa; border-radius: 12px; background: #132c4b; font-size: 23px; }
+    .pill { border: 1px solid #286856; background: #0d3b37; color: #9cffe0; border-radius: 999px; padding: 9px 14px; font-size: 12px; letter-spacing: .12em; font-weight: 750; }
+    h1 { font-size: clamp(36px, 6vw, 70px); letter-spacing: -.05em; line-height: 1.04; margin: 14px 0 16px; }
+    h2 { font-size: 17px; margin: 0; }
+    .eyebrow, .muted { color: #94b4d2; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .2em; font-weight: 800; font-size: 11px; }
+    .intro { margin: 45px 0 32px; max-width: 760px; }
+    .intro p { color: #aec6db; line-height: 1.7; max-width: 610px; }
+    .layout { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; }
+    .panel { border: 1px solid #30465f; border-radius: 18px; background: linear-gradient(145deg, #142b43, #0d1b2f); padding: 24px; box-shadow: 0 15px 35px #0002; }
+    .orbit { min-height: 320px; display: grid; place-items: center; position: relative; overflow: hidden; margin-top: 14px; border-radius: 16px; background: radial-gradient(circle, #214b70 0, #0c1b32 55%, #0a1426 85%); }
+    .orbit:before, .orbit:after { content: ""; border: 1px dashed #367395; border-radius: 50%; position: absolute; width: 220px; height: 220px; transform: rotate(-25deg) scaleX(1.45); }
+    .orbit:after { width: 310px; height: 310px; opacity: .45; }
+    .planet { width: 145px; height: 145px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #99d6fc, #2572a4 35%, #164269 69%, #08192d 100%); box-shadow: 0 0 55px #1b90cf55; z-index: 1; }
+    .craft { position: absolute; right: 21%; top: 19%; font-size: 33px; z-index: 2; filter: drop-shadow(0 0 15px #b7e7fc); }
+    .orbit-label { position: absolute; bottom: 18px; left: 20px; color: #a7c8e0; font-size: 12px; letter-spacing: .14em; }
+    .telemetry { display: grid; gap: 15px; margin: 22px 0 26px; }
+    .stat { border-bottom: 1px solid #2a3f56; padding-bottom: 13px; font-size: 14px; }
+    .stat strong { font-size: 15px; color: #c3edff; }
+    #countdown { font-variant-numeric: tabular-nums; font-size: 55px; letter-spacing: -.05em; margin: 28px 0 17px; }
+    button { cursor: pointer; font: inherit; font-weight: 800; border-radius: 11px; padding: 13px 19px; }
+    button:focus-visible { outline: 3px solid #fbc35b; outline-offset: 3px; }
+    #launch { border: 0; background: #88e3ff; color: #081627; flex: 1; }
+    #abort { border: 1px solid #b55e79; background: #361e31; color: #ffc9d5; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px; margin-top: 24px; color: #8eabc5; font-size: 12px; }
+    @media (max-width: 750px) { .layout { grid-template-columns: 1fr; } .orbit { min-height: 245px; } .shell { padding: 24px 15px 50px; } }
+  </style>
 </head>
-<body style="background:#081225; color:white; font-family:Arial; padding:40px;">
-
-    <h1>🚀 MISSION CONTROL</h1>
-    <p>AWS Deployment Training</p>
-
-    <hr>
-
-    <h2>System Status: ONLINE</h2>
-    <p>Current Release: v1.1</p>
-    <p>All systems operational.</p>
-
+<body>
+  <div class="shell">
+    <header>
+      <div class="logo"><span class="logo-mark" aria-hidden="true">🚀</span> MISSION CONTROL</div>
+      <span class="pill" id="status">● SYSTEMS ONLINE</span>
+    </header>
+    <section class="intro">
+      <div class="eyebrow">Flight operations / simulated mission</div>
+      <h1>Your mission.<br>Under control.</h1>
+      <p>Live from the deployment lab. This dashboard is a safe, simulated launch console — not connected to real spacecraft.</p>
+    </section>
+    <main class="layout">
+      <section class="panel" aria-label="Mission overview">
+        <div class="section-head"><h2>Orbital overview</h2><span class="eyebrow">MC-001</span></div>
+        <div class="orbit" role="img" aria-label="Illustration of a blue planet and spacecraft in orbit"><div class="planet"></div><div class="craft">✦</div><span class="orbit-label">LOW EARTH ORBIT // DEMO</span></div>
+      </section>
+      <section class="panel" aria-label="Launch controls">
+        <div class="section-head"><h2>Launch sequence</h2><span class="eyebrow" id="env-label">LOCAL</span></div>
+        <div class="telemetry">
+          <div class="stat"><span class="muted">Flight computer</span><strong>READY</strong></div>
+          <div class="stat"><span class="muted">Telemetry</span><strong>NOMINAL</strong></div>
+          <div class="stat"><span class="muted">Release</span><strong>v2.0</strong></div>
+        </div>
+        <div class="muted">T-minus (simulated)</div>
+        <div id="countdown" aria-live="polite">00:10</div>
+        <div class="actions"><button id="launch" type="button">Initiate launch</button><button id="abort" type="button" disabled>Abort</button></div>
+        <p class="muted" id="message" role="status">Awaiting launch authorization.</p>
+      </section>
+    </main>
+    <footer class="footer"><span>MISSION CONTROL · CLOUD ENGINEERING LAB</span><span id="deployment">LOCAL DEVELOPMENT</span></footer>
+  </div>
+  <script>
+    (() => {
+      const launch = document.getElementById('launch');
+      const abort = document.getElementById('abort');
+      const display = document.getElementById('countdown');
+      const message = document.getElementById('message');
+      const status = document.getElementById('status');
+      let remaining = 10;
+      let timer = null;
+      const environment = location.pathname.split('/').filter(Boolean)[0];
+      if (['dev', 'stage', 'uat', 'prod'].includes(environment)) {
+        document.getElementById('env-label').textContent = environment.toUpperCase();
+        document.getElementById('deployment').textContent = `S3 DEPLOYMENT · ${environment.toUpperCase()}`;
+      }
+      const render = () => { display.textContent = `00:${String(remaining).padStart(2, '0')}`; };
+      launch.addEventListener('click', () => {
+        if (timer !== null) return;
+        remaining = 10;
+        render();
+        message.textContent = 'Simulated countdown running…';
+        status.textContent = '● COUNTDOWN ACTIVE';
+        launch.disabled = true;
+        abort.disabled = false;
+        timer = setInterval(() => {
+          remaining -= 1;
+          render();
+          if (remaining === 0) {
+            clearInterval(timer);
+            timer = null;
+            abort.disabled = true;
+            launch.disabled = false;
+            status.textContent = '● SIMULATION COMPLETE';
+            message.textContent = 'Launch simulation successful. Mission Control is operational.';
+          }
+        }, 1000);
+      });
+      abort.addEventListener('click', () => {
+        clearInterval(timer);
+        timer = null;
+        remaining = 10;
+        render();
+        launch.disabled = false;
+        abort.disabled = true;
+        status.textContent = '● SYSTEMS ONLINE';
+        message.textContent = 'Countdown aborted. Ready for another simulation.';
+      });
+    })();
+  </script>
 </body>
 </html>
