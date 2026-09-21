@@ -23,3 +23,11 @@ jobs:
         run: |
           mkdir -p dist
           cp index.html dist/index.html
+
+        #This will store the artifact in the GitHub Actions Artifact Storage, 
+        #where we can downlaod the code artifact after on our computer
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-build
+          path: dist/
