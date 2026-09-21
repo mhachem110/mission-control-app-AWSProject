@@ -3,4 +3,7 @@
 aws-setup
 README-SETUP.md
 tests
+dist
+.env
 *.zip
+*.tar.gz
