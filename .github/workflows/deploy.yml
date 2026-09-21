@@ -1,0 +1,125 @@
+name: Mission Control - S3 CI/CD
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [stage, uat, prod]
+
+# Build/test have read-only access. Only the deployment job can request AWS OIDC tokens.
+permissions:
+  contents: read
+
+jobs:
+  detect-environment:
+    name: 1 - Detect environment
+    if: github.event_name == 'push' || github.event.action != 'closed' || github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    outputs:
+      environment: ${{ steps.detect.outputs.environment }}
+    steps:
+      - name: Determine target from trigger
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BRANCH: ${{ github.ref_name }}
+          PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" && "$PUSH_BRANCH" == "dev" ]]; then
+            target=dev
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            case "$PR_BASE_BRANCH" in
+              stage|uat|prod) target="$PR_BASE_BRANCH" ;;
+              *) echo 'Unexpected pull request target' >&2; exit 1 ;;
+            esac
+          else
+            echo 'Unexpected deployment trigger' >&2
+            exit 1
+          fi
+          echo "environment=$target" >> "$GITHUB_OUTPUT"
+          echo "Target environment: $target"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Repository owner ID: $GITHUB_REPOSITORY_OWNER_ID"
+          echo "Repository ID: $GITHUB_REPOSITORY_ID"
+
+  build:
+    name: 2 - Build
+    needs: detect-environment
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact triggering commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Package static website
+        run: |
+          set -euo pipefail
+          test -s index.html
+          mkdir -p dist
+          cp index.html dist/index.html
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-site
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    name: 3 - Test
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download exactly the built artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mission-control-site
+          path: dist/
+      - name: Validate built site
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          grep -Fqi 'MISSION CONTROL' dist/index.html
+          echo 'Static site smoke tests passed.'
+
+  deploy:
+    name: 4 - Deploy to S3
+    needs: [detect-environment, test]
+    if: github.event_name == 'push' || (github.event.action == 'closed' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ needs.detect-environment.outputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: mission-control-${{ needs.detect-environment.outputs.environment }}
+      cancel-in-progress: false
+    env:
+      TARGET_ENV: ${{ needs.detect-environment.outputs.environment }}
+      S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - name: Download tested artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mission-control-site
+          path: dist/
+      - name: Check deployment settings
+        run: |
+          set -euo pipefail
+          test -n "$S3_BUCKET" || { echo 'Set repository variable AWS_S3_BUCKET' >&2; exit 1; }
+          test -n "$AWS_REGION" || { echo 'Set repository variable AWS_REGION' >&2; exit 1; }
+          test -s dist/index.html
+      - name: Authenticate to AWS using short-lived OIDC credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Upload site and remove obsolete files in this environment only
+        run: |
+          set -euo pipefail
+          aws s3 sync dist/ "s3://${S3_BUCKET}/${TARGET_ENV}/" --delete --only-show-errors
+          aws s3api head-object --bucket "$S3_BUCKET" --key "${TARGET_ENV}/index.html" >/dev/null
+          echo "Deployment complete: s3://${S3_BUCKET}/${TARGET_ENV}/"
