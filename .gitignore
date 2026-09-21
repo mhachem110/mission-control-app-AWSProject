@@ -1,2 +1,5 @@
+dist/
 aws-setup/generated/
+.env
+*.tar.gz
 .DS_Store
