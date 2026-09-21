@@ -6,7 +6,7 @@ test -s dist/index.html
 test -s dist/mission-control-image.tar.gz
 test -s dist/Dockerfile
 grep -Fq 'MISSION CONTROL' dist/index.html
-sha256sum -c dist/SHA256SUMS
+(cd dist && sha256sum -c SHA256SUMS)
 
 docker load -i dist/mission-control-image.tar.gz
 container_id="$(docker run -d -p 127.0.0.1:18080:80 "mission-control:${GITHUB_SHA}")"
